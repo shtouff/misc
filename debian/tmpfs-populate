@@ -42,160 +42,159 @@ MOUNTPOINTS=
 
 clean_exit()
 {
-		echo "ERR detected, exiting cleanly"
-		trap ERR
-
-		for mountpoint in $MOUNTPOINTS; do
-				tmpdev=${mountpoint//\//}
-				umount -l $mountpoint >/dev/null 2>&1
-				umount -l /tmpfs-populate/$tmpdev >/dev/null 2>&1
-				rmdir /tmpfs-populate/$tmpdev >/dev/null 2>&1
-		done
-		
-		rmdir  /tmpfs-populate >/dev/null 2>&1
-		exit 1
+	echo "ERR detected, exiting cleanly"
+	trap ERR
+	
+	for mountpoint in $MOUNTPOINTS; do
+		tmpdev=${mountpoint//\//}
+		umount -l $mountpoint >/dev/null 2>&1
+		umount -l /tmpfs-populate/$tmpdev >/dev/null 2>&1
+		rmdir /tmpfs-populate/$tmpdev >/dev/null 2>&1
+	done
+	
+	rmdir  /tmpfs-populate >/dev/null 2>&1
+	exit 1
 }
 
 populate()
 {
-		local mountpoint=$1
-		local tmpdev=${mountpoint//\//}
-		
-	  # Check if I'm root
-		[ `id -u` -eq 0 ] || return 2
+	local mountpoint=$1
+	local tmpdev=${mountpoint//\//}
+	
+	# Check if I'm root
+	[ `id -u` -eq 0 ] || return 2
+	
+	# from here, we must not fail
+	trap clean_exit ERR
 
-		# from here, we must not fail
-		trap clean_exit ERR
-
-		# rebind wanted mountpoint somewhere else
+	# rebind wanted mountpoint somewhere else
     mkdir -p /tmpfs-populate/$tmpdev
-		mount --bind $mountpoint /tmpfs-populate/$tmpdev
-
-		# mount a TMPFS in place
-		mount -t tmpfs tmpfs-$tmpdev $mountpoint
+	mount --bind $mountpoint /tmpfs-populate/$tmpdev
+	
+	# mount a TMPFS in place
+	mount -t tmpfs tmpfs-$tmpdev $mountpoint
 		
-		cd /tmpfs-populate/$tmpdev
-		find . -type d -print0 \
-				| xargs -r0 tar -c --no-recursion -f - \
-				| tar -C $mountpoint -x -f -
-		
-		log_progress_msg "${mountpoint}"
-		
-		trap ERR
-		return 0
+	cd /tmpfs-populate/$tmpdev
+	find . -type d -print0 \
+		| xargs -r0 tar -c --no-recursion -f - \
+		| tar -C $mountpoint -x -f -
+	
+	log_progress_msg "${mountpoint}"
+	
+	trap ERR
+	return 0
 }
 
 do_start()
 {
-		for mountpoint in $MOUNTPOINTS; do
-				populate $mountpoint
-		done
-
-		touch $LOCKFILE
-		return 0
+	for mountpoint in $MOUNTPOINTS; do
+		populate $mountpoint
+	done
+	
+	touch $LOCKFILE
+	return 0
 }
 
 unmount()
 {
-		local mountpoint=$1
-		local tmpdev=${mountpoint//\//}
-		
-	  # Check if I am root
-		[ `id -u` -eq 0 ] || return 2
-
+	local mountpoint=$1
+	local tmpdev=${mountpoint//\//}
+	
+	# Check if I am root
+	[ `id -u` -eq 0 ] || return 2
+	
     # from here, we must not fail
-		trap clean_exit ERR
-		
-		# umount TMPFS instance
-		umount -l -t tmpfs $mountpoint
-
-		# umount re-binded origin
-		umount -l /tmpfs-populate/$tmpdev
-		rmdir /tmpfs-populate/$tmpdev
-		
-		log_progress_msg "${mountpoint}"
-		
-		trap ERR
-		return 0
+	trap clean_exit ERR
+	
+	# umount TMPFS instance
+	umount -l -t tmpfs $mountpoint
+	
+	# umount re-binded origin
+	umount -l /tmpfs-populate/$tmpdev
+	rmdir /tmpfs-populate/$tmpdev
+	
+	log_progress_msg "${mountpoint}"
+	
+	trap ERR
+	return 0
 }
 
 do_stop()
 {
-		for mountpoint in $MOUNTPOINTS; do
-				unmount $mountpoint
-		done
-
-		rm -f $LOCKFILE
-		return 0
+	for mountpoint in $MOUNTPOINTS; do
+		unmount $mountpoint
+	done
+	
+	rm -f $LOCKFILE
+	return 0
 }
 
 sync()
 {
-		local mountpoint=$1
-		local tmpdev=${mountpoint//\//}
+	local mountpoint=$1
+	local tmpdev=${mountpoint//\//}
+	
+	# Check if I am root
+	[ `id -u` -eq 0 ] || return 2
+	
+	# from here, we must not fail
+	trap clean_exit ERR
 		
-		# Check if I am root
-		[ `id -u` -eq 0 ] || return 2
-		
-
-		# from here, we must not fail
-		trap clean_exit ERR
-		
-		cd $mountpoint
-		find . -type d -print0 \
-				| xargs -r0 tar -c --no-recursion -f - \
-				| tar -C /tmpfs-populate/$tmpdev -x -f -
-		
-		log_progress_msg "${mountpoint}"
-		
-		trap ERR
-		return 0
+	cd $mountpoint
+	find . -type d -print0 \
+		| xargs -r0 tar -c --no-recursion -f - \
+		| tar -C /tmpfs-populate/$tmpdev -x -f -
+	
+	log_progress_msg "${mountpoint}"
+	
+	trap ERR
+	return 0
 }
 
 do_sync() {
-		for mountpoint in $MOUNTPOINTS; do
-				sync $mountpoint
-		done
-		
-		rm -f $LOCKFILE
-		return 0
+	for mountpoint in $MOUNTPOINTS; do
+		sync $mountpoint
+	done
+	
+	rm -f $LOCKFILE
+	return 0
 }
 
 case "$1" in
-		start)
-				log_daemon_msg "Starting $DESC" "$NAME"
-				do_start
-				case "$?" in
-						0|1) log_end_msg 0 ;;
-						2) log_end_msg 1 ;;
-				esac
-				exit 0
-				;;
-		stop)
-				log_daemon_msg "Stopping $DESC" "$NAME"
-				do_stop
-				case "$?" in
-						0|1) log_end_msg 0 ;;
-						2) log_end_msg 1 ;;
-				esac
-				exit 0
-				;;
-		status)
-  			if [ -f $LOCKFILE ]; then
-						echo "$DESC is running"
-				else
-						echo "$DESC is stopped"
-						exit 1
-				fi
-				;;
-		sync)
-				log_daemon_msg "Syncing $DESC" "$NAME"
-				do_sync
-				log_end_msg $?
-				exit 0
-				;;
-		*)
-				echo "Usage: $0 {start|stop|status|sync}" >&2
-				exit 3
-				;;
+	start)
+		log_daemon_msg "Starting $DESC" "$NAME"
+		do_start
+		case "$?" in
+			0|1) log_end_msg 0 ;;
+			2) log_end_msg 1 ;;
+		esac
+		exit 0
+		;;
+	stop)
+		log_daemon_msg "Stopping $DESC" "$NAME"
+		do_stop
+		case "$?" in
+			0|1) log_end_msg 0 ;;
+			2) log_end_msg 1 ;;
+		esac
+		exit 0
+		;;
+	status)
+  		if [ -f $LOCKFILE ]; then
+			echo "$DESC is running"
+		else
+			echo "$DESC is stopped"
+			exit 1
+		fi
+		;;
+	sync)
+		log_daemon_msg "Syncing $DESC" "$NAME"
+		do_sync
+		log_end_msg $?
+		exit 0
+		;;
+	*)
+		echo "Usage: $0 {start|stop|status|sync}" >&2
+		exit 3
+		;;
 esac
