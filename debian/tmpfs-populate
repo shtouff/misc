@@ -75,10 +75,8 @@ populate()
 	mount -t tmpfs tmpfs-$tmpdev $mountpoint
 		
 	cd /tmpfs-populate/$tmpdev
-	find . -type d -print0 \
-		| xargs -r0 tar -c --no-recursion -f - \
-		| tar -C $mountpoint -x -f -
-	
+	rsync -ax . $mountpoint/
+
 	log_progress_msg "${mountpoint}"
 	
 	trap ERR
@@ -88,7 +86,7 @@ populate()
 do_start()
 {
 	for mountpoint in $MOUNTPOINTS; do
-		populate $mountpoint
+		populate $mountpoint || return 2
 	done
 	
 	touch $LOCKFILE
@@ -141,10 +139,8 @@ sync()
 	trap clean_exit ERR
 		
 	cd $mountpoint
-	find . -type d -print0 \
-		| xargs -r0 tar -c --no-recursion -f - \
-		| tar -C /tmpfs-populate/$tmpdev -x -f -
-	
+	rsync -ax --delete . /tmpfs-populate/$tmpdev/
+
 	log_progress_msg "${mountpoint}"
 	
 	trap ERR
@@ -162,6 +158,10 @@ do_sync() {
 
 case "$1" in
 	start)
+		if [ -f $LOCKFILE ]; then
+			echo "$DESC is already running"
+			exit 2
+		fi
 		log_daemon_msg "Starting $DESC" "$NAME"
 		do_start
 		case "$?" in
@@ -188,6 +188,10 @@ case "$1" in
 		fi
 		;;
 	sync)
+		if [ ! -f $LOCKFILE ]; then
+			echo "$DESC is not running, cannot sync !"
+			exit 2
+		fi
 		log_daemon_msg "Syncing $DESC" "$NAME"
 		do_sync
 		log_end_msg $?
